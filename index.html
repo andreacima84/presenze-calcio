@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Presenze Calcio</title>
+  <!-- iOS Add to Home (full-screen look) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Presenze Calcio">
+  <meta name="theme-color" content="#000000">
+  <style>
+    :root { --bg:#f7f7f8; --card:#ffffff; --text:#111; --muted:#667085; --line:#e6e6e6; --accent:#111; --ok:#16a34a; --bad:#dc2626; }
+    *{ box-sizing: border-box; }
+    html, body { margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .header { position: sticky; top: 0; z-index: 10; backdrop-filter: saturate(180%) blur(8px); background: rgba(255,255,255,0.8); border-bottom:1px solid var(--line); }
+    .header .inner { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+    .title { font-weight: 800; font-size: 18px; }
+    .tabs { display:flex; gap:8px; }
+    .tab { border:1px solid var(--line); background:#fff; padding:8px 12px; border-radius:999px; font-size:13px; }
+    .tab.active { background:#111; color:#fff; border-color:#111; }
+    .section { padding: 12px 16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); padding: 12px; }
+    .row { display:flex; gap:8px; }
+    .row.wrap { flex-wrap:wrap; }
+    .space { height: 8px; }
+    .btn { border:1px solid var(--line); background:#fff; padding:10px 12px; border-radius:12px; font-weight:600; }
+    .btn:active { transform: scale(0.99); }
+    .btn.primary { background:#111; color:#fff; border-color:#111; }
+    .btn.ghost { background:#fff; }
+    .btn.ok { background: #16a34a; border-color:#16a34a; color:#fff; }
+    .btn.bad { background: #dc2626; border-color:#dc2626; color:#fff; }
+    .btn.small { padding:6px 10px; font-size: 13px; }
+    .btn.block { width:100%; text-align:center; }
+    .grid { display:grid; gap:8px; }
+    .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    label { font-size:12px; color:var(--muted); }
+    input, select { width:100%; padding:10px 12px; border-radius:12px; border:1px solid var(--line); font-size:15px; }
+    input[type="date"] { padding: 8px 10px; }
+    .list { display:flex; flex-direction:column; gap:8px; }
+    .player { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+    .pname { font-weight:700; }
+    .muted { color:var(--muted); font-size: 12px; }
+    .seg { display:flex; gap:6px; }
+    .seg .segbtn { padding:8px 10px; border-radius:10px; border:1px solid var(--line); font-weight:700; font-size:13px; background:#fff; }
+    .seg .segbtn.active.ok { background: var(--ok); border-color:var(--ok); color:#fff; }
+    .seg .segbtn.active.bad { background: var(--bad); border-color:var(--bad); color:#fff; }
+    .pill { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; border:1px solid var(--line); font-size:12px; gap:6px; }
+    .pill.ok { background:#ecfdf5; border-color:#86efac; color:#14532d; }
+    .pill.bad { background:#fef2f2; border-color:#fecaca; color:#7f1d1d; }
+    .table { width:100%; border-collapse: collapse; }
+    .table th, .table td { padding:8px; border-bottom:1px solid var(--line); text-align:left; font-size:14px; }
+    .right { text-align:right; }
+    .center { text-align:center; }
+    .danger { color:#b91c1c; }
+    .notice { font-size: 13px; color: var(--muted); }
+  </style>
+  <!-- React via CDN (single-file app) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    // ---- Utilities ----
+    const LS_KEY = 'football_attendance_v1';
+    const fmtDate = (d) => d.toISOString().slice(0,10);
+    const todayStr = () => fmtDate(new Date());
+
+    function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data.players) || typeof data.attendance !== 'object') return null;
+        return data;
+      } catch { return null; }
+    }
+    function saveData(data){ localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+
+    function downloadText(filename, text){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+    }
+
+    // ---- App ----
+    function App(){
+      const [tab, setTab] = useState('presenze'); // presenze | giocatori | report | impostazioni
+      const [data, setData] = useState(() => loadData() || {
+        players: [
+          { id: uid(), surname: 'Rossi', name: 'Marco', dob: '2010-05-12' },
+          { id: uid(), surname: 'Bianchi', name: 'Luca', dob: '2011-03-04' },
+          { id: uid(), surname: 'Verdi', name: 'Anna', dob: '2010-11-20' },
+        ],
+        attendance: { [todayStr()]: {} }, // { 'YYYY-MM-DD': { playerId: 1|0 } }
+      });
+
+      const [date, setDate] = useState(() => Object.keys(data.attendance)[0] || todayStr());
+
+      useEffect(() => saveData(data), [data]);
+      // Ensure selected date exists in attendance map
+      useEffect(() => {
+        setData(d => {
+          if (d.attendance[date]) return d;
+          return { ...d, attendance: { ...d.attendance, [date]: {} } };
+        });
+      }, [date]);
+
+      const playersSorted = useMemo(() => [...data.players].sort((a,b)=>{
+        const s = a.surname.localeCompare(b.surname, 'it', { sensitivity:'base' });
+        if (s !== 0) return s; return a.name.localeCompare(b.name, 'it', { sensitivity:'base' });
+      }), [data.players]);
+
+      const sessionDates = useMemo(() => Object.keys(data.attendance).sort(), [data.attendance]);
+
+      function setPresence(pid, present){
+        setData(d => ({
+          ...d,
+          attendance: {
+            ...d.attendance,
+            [date]: { ...(d.attendance[date]||{}), [pid]: present ? 1 : 0 }
+          }
+        }));
+      }
+
+      function addPlayer(newP){ setData(d => ({ ...d, players: [...d.players, newP] })); }
+      function updatePlayer(pid, patch){ setData(d => ({ ...d, players: d.players.map(p => p.id===pid?{...p, ...patch}:p) })); }
+      function deletePlayer(pid){
+        setData(d => {
+          const next = { ...d, players: d.players.filter(p=>p.id!==pid) };
+          // remove attendance entries for deleted player
+          const att = {}; for (const [dt, rec] of Object.entries(d.attendance)){
+            const { [pid]: _, ...rest } = rec || {}; att[dt] = rest;
+          }
+          next.attendance = att; return next;
+        });
+      }
+
+      function newEmptyDay(){ const t = todayStr(); setDate(t); }
+
+      function markAll(val){
+        setData(d => ({
+          ...d,
+          attendance: {
+            ...d.attendance,
+            [date]: Object.fromEntries(d.players.map(p => [p.id, val ? 1 : 0]))
+          }
+        }));
+      }
+
+      function exportCSV(){
+        const rows = [[ 'Data', 'Cognome', 'Nome', 'Data nascita', 'Presente' ]];
+        for (const dt of Object.keys(data.attendance).sort()){
+          for (const p of data.players){
+            const v = data.attendance[dt]?.[p.id];
+            const present = v === 1 ? 'Sì' : 'No';
+            rows.push([ dt, p.surname, p.name, p.dob || '', v==null? '': present ]);
+          }
+        }
+        const csv = rows.map(r => r.map(c => '"'+String(c).replaceAll('"','""')+'"').join(',')).join('\n');
+        downloadText(`presenze_${todayStr()}.csv`, csv);
+      }
+
+      function importCSV(file){
+        if (!file) return; const reader = new FileReader();
+        reader.onload = () => {
+          try{
+            const lines = String(reader.result).split(/\r?\n/).filter(Boolean);
+            const header = lines[0].split(',').map(s=>s.replaceAll('"','').trim().toLowerCase());
+            const idx = {
+              data: header.indexOf('data'),
+              cognome: header.indexOf('cognome'),
+              nome: header.indexOf('nome'),
+              dob: header.indexOf('data nascita'),
+              presente: header.indexOf('presente'),
+            };
+            const playersMap = new Map(data.players.map(p=>[p.surname+'|'+p.name+'|'+(p.dob||''), p]));
+            const att = { ...data.attendance };
+            for (let i=1;i<lines.length;i++){
+              const cols = lines[i].match(/\"([^\"]*)\"|([^,]+)/g)?.map(s=>s.replace(/^\"|\"$/g,'')) || [];
+              const dt = cols[idx.data]; const cogn = cols[idx.cognome]; const nom = cols[idx.nome]; const db = cols[idx.dob];
+              const presentStr = (cols[idx.presente]||'').toLowerCase();
+              if (!dt || !cogn || !nom) continue;
+              let p = playersMap.get(cogn+'|'+nom+'|'+(db||''));
+              if (!p){ p = { id: uid(), surname:cogn, name:nom, dob:db||'' }; playersMap.set(cogn+'|'+nom+'|'+(db||''), p); }
+              if (!att[dt]) att[dt] = {};
+              if (presentStr){ att[dt][p.id] = presentStr.startsWith('s') ? 1 : 0; }
+            }
+            const newPlayers = Array.from(playersMap.values());
+            setData({ players: newPlayers, attendance: att });
+            alert('Import completato.');
+          }catch(e){ alert('Import non riuscito: '+e.message); }
+        };
+        reader.readAsText(file);
+      }
+
+      // ---- Derived stats ----
+      const totals = useMemo(()=>{
+        const dates = Object.keys(data.attendance);
+        const byPlayer = new Map();
+        for (const p of data.players) byPlayer.set(p.id, { present:0, total: dates.length });
+        for (const dt of dates){
+          const rec = data.attendance[dt]||{};
+          for (const [pid, v] of Object.entries(rec)){
+            if (v === 1) byPlayer.get(pid).present += 1;
+          }
+        }
+        return byPlayer; // Map pid -> {present, total}
+      }, [data]);
+
+      return (
+        <div className="wrap">
+          <div className="header"><div className="inner">
+            <div className="title">⚽ Presenze Calcio</div>
+            <div className="tabs">
+              {['presenze','giocatori','report','impostazioni'].map(t => (
+                <button key={t} className={'tab ' + (tab===t?'active':'')} onClick={()=>setTab(t)}>
+                  {t.charAt(0).toUpperCase()+t.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div></div>
+
+          {tab==='presenze' && (
+            <section className="section">
+              <div className="card">
+                <div className="row wrap" style={{alignItems:'center', justifyContent:'space-between'}}>
+                  <div style={{flex:'1 1 auto', minWidth:180}}>
+                    <label>Data allenamento</label>
+                    <input type="date" value={date} onChange={e=>setDate(e.target.value)} />
+                  </div>
+                  <div className="row" style={{gap:6, marginTop:22}}>
+                    <button className="btn small" onClick={()=>setDate(sessionDates[sessionDates.length-1]||todayStr())}>Ultimo</button>
+                    <button className="btn small" onClick={newEmptyDay}>Oggi</button>
+                  </div>
+                </div>
+                <div className="space"></div>
+                <div className="row" style={{gap:6}}>
+                  <button className="btn ok" onClick={()=>markAll(true)}>Tutti presenti</button>
+                  <button className="btn bad" onClick={()=>markAll(false)}>Tutti assenti</button>
+                </div>
+              </div>
+
+              <div className="space"></div>
+
+              <div className="list">
+                {playersSorted.map(p => {
+                  const val = data.attendance?.[date]?.[p.id];
+                  return (
+                    <div className="player" key={p.id}>
+                      <div>
+                        <div className="pname">{p.surname} {p.name}</div>
+                        <div className="muted">{p.dob ? `Nato/a: ${p.dob}` : 'Data di nascita: —'}</div>
+                      </div>
+                      <div className="seg">
+                        <button className={'segbtn '+ (val===1?'active ok':'')} onClick={()=>setPresence(p.id, true)}>Presente</button>
+                        <button className={'segbtn '+ (val===0?'active bad':'')} onClick={()=>setPresence(p.id, false)}>Assente</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space"></div>
+              <div className="notice">Suggerimento: aggiungi questa pagina alla schermata Home del tuo iPhone per aprirla al volo come un'app.</div>
+            </section>
+          )}
+
+          {tab==='giocatori' && (
+            <PlayersTab players={data.players} onAdd={addPlayer} onUpdate={updatePlayer} onDelete={deletePlayer} />
+          )}
+
+          {tab==='report' && (
+            <ReportTab players={playersSorted} totals={totals} />
+          )}
+
+          {tab==='impostazioni' && (
+            <SettingsTab onExport={exportCSV} onImport={importCSV} onReset={()=>{
+              if (confirm('Sei sicuro di voler cancellare tutti i dati?')){
+                localStorage.removeItem(LS_KEY);
+                window.location.reload();
+              }
+            }} sessionDates={sessionDates} />
+          )}
+        </div>
+      );
+    }
+
+    function PlayersTab({ players, onAdd, onUpdate, onDelete }){
+      const [form, setForm] = useState({ surname:'', name:'', dob:'' });
+      const valid = form.surname.trim() && form.name.trim();
+      function submit(e){ e.preventDefault(); if (!valid) return; onAdd({ id: uid(), ...form, surname:form.surname.trim(), name:form.name.trim() }); setForm({ surname:'', name:'', dob:'' }); }
+
+      return (
+        <section className="section">
+          <div className="card">
+            <form onSubmit={submit} className="grid cols-3">
+              <div>
+                <label>Cognome</label>
+                <input value={form.surname} onChange={e=>setForm(f=>({...f, surname:e.target.value}))} placeholder="Es. Rossi" />
+              </div>
+              <div>
+                <label>Nome</label>
+                <input value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))} placeholder="Es. Marco" />
+              </div>
+              <div>
+                <label>Data di nascita</label>
+                <input type="date" value={form.dob} onChange={e=>setForm(f=>({...f, dob:e.target.value}))} />
+              </div>
+              <div style={{gridColumn:'1 / -1'}}>
+                <button className="btn primary block" type="submit" disabled={!valid}>Aggiungi giocatore</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="space"></div>
+
+          <div className="card">
+            <table className="table">
+              <thead>
+                <tr><th>Giocatore</th><th>Data nascita</th><th className="right">Azioni</th></tr>
+              </thead>
+              <tbody>
+                {players.map(p => (
+                  <PlayerRow key={p.id} p={p} onUpdate={onUpdate} onDelete={onDelete} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      );
+    }
+
+    function PlayerRow({ p, onUpdate, onDelete }){
+      const [edit, setEdit] = useState(false);
+      const [form, setForm] = useState({ surname:p.surname, name:p.name, dob:p.dob||'' });
+      useEffect(()=>{ setForm({ surname:p.surname, name:p.name, dob:p.dob||'' }); }, [p.id]);
+      return (
+        <tr>
+          <td>
+            {edit ? (
+              <div className="row wrap">
+                <input style={{minWidth:120}} value={form.surname} onChange={e=>setForm(f=>({...f, surname:e.target.value}))} />
+                <input style={{minWidth:120}} value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))} />
+              </div>
+            ) : (
+              <div className="pname">{p.surname} {p.name}</div>
+            )}
+          </td>
+          <td>
+            {edit ? (
+              <input type="date" value={form.dob} onChange={e=>setForm(f=>({...f, dob:e.target.value}))} />
+            ) : (
+              <span className="muted">{p.dob || '—'}</span>
+            )}
+          </td>
+          <td className="right">
+            {!edit ? (
+              <div className="row" style={{justifyContent:'flex-end', gap:6}}>
+                <button className="btn small" onClick={()=>setEdit(true)}>Modifica</button>
+                <button className="btn small danger" onClick={()=>{ if (confirm('Eliminare questo giocatore?')) onDelete(p.id); }}>Elimina</button>
+              </div>
+            ) : (
+              <div className="row" style={{justifyContent:'flex-end', gap:6}}>
+                <button className="btn small" onClick={()=>{ onUpdate(p.id, form); setEdit(false); }}>Salva</button>
+                <button className="btn small" onClick={()=>{ setEdit(false); setForm({ surname:p.surname, name:p.name, dob:p.dob||'' }); }}>Annulla</button>
+              </div>
+            )}
+          </td>
+        </tr>
+      );
+    }
+
+    function ReportTab({ players, totals }){
+      const rows = players.map(p => {
+        const t = totals.get(p.id) || { present:0, total: 0 };
+        const perc = t.total ? Math.round((t.present / t.total) * 100) : 0;
+        return { ...p, present: t.present, total: t.total, perc };
+      }).sort((a,b)=> b.perc - a.perc || a.surname.localeCompare(b.surname,'it'));
+
+      return (
+        <section className="section">
+          <div className="card">
+            <div className="row wrap" style={{alignItems:'baseline', justifyContent:'space-between'}}>
+              <div>
+                <div className="pname">Report presenze</div>
+                <div className="muted">Totale allenamenti registrati: {rows[0]?.total || 0}</div>
+              </div>
+            </div>
+            <div className="space"></div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Giocatore</th>
+                  <th className="center">Presenti</th>
+                  <th className="center">Totale</th>
+                  <th className="right">% Presenza</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.surname} {r.name}</td>
+                    <td className="center">{r.present}</td>
+                    <td className="center">{r.total}</td>
+                    <td className="right">{r.perc}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      );
+    }
+
+    function SettingsTab({ onExport, onImport, onReset, sessionDates }){
+      return (
+        <section className="section">
+          <div className="card">
+            <div className="pname">Backup & dati</div>
+            <div className="space"></div>
+            <div className="row" style={{gap:8, flexWrap:'wrap'}}>
+              <button className="btn" onClick={onExport}>Esporta CSV</button>
+              <label className="btn" style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer'}}>
+                Importa CSV
+                <input style={{display:'none'}} type="file" accept=".csv,text/csv" onChange={e=>onImport(e.target.files[0])} />
+              </label>
+              <button className="btn danger" onClick={onReset}>Reset completo</button>
+            </div>
+            <div className="space"></div>
+            <div className="notice">I dati sono salvati solo sul tuo dispositivo (localStorage). Nessun server.</div>
+          </div>
+
+          <div className="space"></div>
+
+          <div className="card">
+            <div className="pname">Allenamenti registrati</div>
+            <div className="space"></div>
+            {sessionDates.length ? (
+              <div className="row wrap" style={{gap:6}}>
+                {sessionDates.map(d => <span className="pill" key={d}>📅 {d}</span>)}
+              </div>
+            ) : (
+              <div className="muted">Ancora nessun allenamento.</div>
+            )}
+          </div>
+        </section>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
